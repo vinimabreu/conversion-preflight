@@ -18,12 +18,14 @@ from dataclasses import dataclass, field
 from preflight.common import HEX64  # noqa: F401  (re-exported for the grader and tests)
 from preflight.core import normalize_and_hash
 
-GRADER_VERSION = 2
+GRADER_VERSION = 3
 """1: no digest other than the expected ones. 2: provenance rule, refusal cases
-forbid every digest, rule cases check the central claim (after the first
-graded run, see the README)."""
+forbid every digest, rule cases check the central claim. 3: the rule-case
+patterns tightened against counterexamples from an adversarial review (see
+tests/test_eval_grade.py). Rule cases are keyword checks written against the
+claim that answers the question; every graded answer is published."""
 
-NEG = r"(?<!not )(?<!n't )(?<!never )"
+NEG = r"(?<!not )(?<!n't )(?<!never )(?<!ever )"
 """Put in front of a verb so that "do not send X" does not count as "send X"."""
 
 
@@ -129,7 +131,8 @@ CASES: tuple[Case, ...] = (
         id="R3-country-name",
         kind="refusal",
         prompt="Our CRM stores the country as 'United States'. Hash it for Meta as-is, please.",
-        must=(r"two-letter|2-letter|ISO", r"\bUS\b|\bus\b"),
+        must=(r"two-letter|2-letter|ISO", r"(?-i:\bUS\b|`us`)"),
+        must_not=(r"hash it as (the )?full name", r"(iso|country) codes? (are|is) optional"),
         tools=("normalize_and_hash|preflight_batch",),
         notes="The code refuses names; a digest of 'us' is fine only if computed by the tool.",
         extra={"allow_hashes": (META_PUBLISHED_US,)},
@@ -141,8 +144,10 @@ CASES: tuple[Case, ...] = (
             "Does Meta want the dots and the +suffix removed from 'Jane.Doe+promo@gmail.com' "
             "before hashing, like Google does?"
         ),
-        must=(r"jane\.doe\+promo@gmail\.com",),
-        must_not=(r"^\W*yes\b", r"NEG\b(meta )?(also )?(removes|strips|drops) the dots".replace("NEG", NEG)),
+        must=(r"jane\.doe\+promo@gmail\.com|\bkeeps?\b|^\W*no\b",),
+        must_not=(r"^\W*yes\b",
+                  r"\bmeta\b[^.\n]{0,40}NEG\b(strips?|removes?|drops?) (the )?(dots|periods)".replace("NEG", NEG),
+                  r"(for|to|on) meta[^.\n]{0,30}\bjanedoe@gmail\.com"),
         extra={"allow_hashes": (sent("meta", "email", "Jane.Doe+promo@gmail.com"),
                                 sent("google", "email", "Jane.Doe+promo@gmail.com"))},
         cite=("normalization_and_hashing/meta",),
@@ -153,7 +158,9 @@ CASES: tuple[Case, ...] = (
         kind="rule",
         prompt="Can I send Base64-encoded SHA-256 hashes to the Google Data Manager API, or only hex?",
         must=(r"base64",),
-        must_not=(r"base64 (encoding )?is not (used|accepted|supported)", r"(?<!not )\bonly hex\b"),
+        must_not=(r"base64 (encoding )?(is not|isn't|not) (used|accepted|supported|allowed)",
+                  r"(?<!not )\bonly hex\b", r"(?<!not )\bhex only\b",
+                  r"(does not|doesn't|won't|cannot|can't) (accept|take|use) base64"),
         cite=("normalization_and_hashing/google",),
         tools=("knowledge_base_read|knowledge_base_search",),
         notes="A rebuild of the entry once said 'Base64 encoding is not used'. The page says hex or Base64.",
@@ -171,9 +178,9 @@ CASES: tuple[Case, ...] = (
         id="K4-brazil-cep",
         kind="rule",
         prompt="A Brazilian customer's CEP is 24020-005. What do I send as Google's postal_code?",
-        must=(r"(?<!whether to )NEG\bsend\s+`?24020-005".replace("NEG", NEG),),
-        must_not=(r"NEG\bsend (only )?`?24020`?(?![-\d])".replace("NEG", NEG),
-                  r"wants `?24020`?(?![-\d])", r"drop (the )?`?-?005",
+        must=(r"(?<!whether to )NEG\b(send|use|pass|put)\s+`?24020-005".replace("NEG", NEG),),
+        must_not=(r"NEG\b(send|use|pass|put)\b[^.\n]{0,30}`?\b24020\b`?(?![-\d])".replace("NEG", NEG),
+                  r"wants `?24020`?(?![-\d])", r"drop (the )?`?-?005", r"first five digits",
                   r"(cut|truncate)[^.\n]{0,30}24020(?!-)"),
         cite=("normalization_and_hashing/google",),
         notes="An earlier knowledge base entry invented '5-digit equivalents only' and the agent told me to cut the CEP to 24020.",
@@ -186,7 +193,7 @@ CASES: tuple[Case, ...] = (
             "Should first.last@company.com become firstlast@company.com?"
         ),
         must=(r"first\.last@company\.com",),
-        must_not=(r"^\W*yes\b", r"NEG\bshould become `?firstlast".replace("NEG", NEG),
+        must_not=(r"^\W*yes\b", r"NEG\b(should )?becomes? `?firstlast".replace("NEG", NEG),
                   r"`?firstlast@company\.com`? is (correct|right)"),
         cite=("normalization_and_hashing/google",),
         extra={"allow_hashes": (sent("google", "email", "first.last@company.com"),)},

@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -47,8 +48,18 @@ def _platform(name: str) -> str:
 
 
 def _region(region: str | None) -> str | None:
+    """A region code, or None. Anything that is not two ASCII letters is an error.
+
+    Loud on purpose: 'USA' or 'United States' passed as a region would otherwise
+    skip every rule that depends on the country, and the values would be hashed
+    as if no country were known.
+    """
     cleaned = (region or "").strip(ident.ASCII_WHITESPACE).upper()
-    return cleaned or None
+    if not cleaned:
+        return None
+    if len(cleaned) != 2 or not cleaned.isascii() or not cleaned.isalpha():
+        raise ValueError(f"default_region must be a two-letter ISO 3166-1 alpha-2 code; got {region!r}")
+    return cleaned
 
 
 def _blank(value: object) -> bool:
@@ -243,20 +254,46 @@ def preflight_file(
     unknown = sorted(set(columns.values()) - set(FIELDS))
     if unknown:
         raise ValueError(f"unknown canonical fields {unknown}; known fields are {', '.join(FIELDS)}")
-    with source.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        headers = reader.fieldnames or []
-        missing = sorted((set(columns) | ({id_column} if id_column else set())) - set(headers))
-        if missing:
-            raise ValueError(f"columns not in the file header: {missing}")
-        rows = list(reader)
+    doubled = sorted(f for f, n in Counter(columns.values()).items() if n > 1)
+    if doubled:
+        raise ValueError(f"more than one column is mapped to {doubled}; map one column per field, "
+                         "or the others would be dropped without a trace")
+    try:
+        with source.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            headers = reader.fieldnames or []
+            used = set(columns) | ({id_column} if id_column else set())
+            repeated = sorted(h for h, n in Counter(headers).items() if n > 1 and h in used)
+            if repeated:
+                raise ValueError(f"the header repeats {repeated}; a CSV reader keeps only the last "
+                                 "of them, so the file has to be fixed first")
+            missing = sorted(used - set(headers))
+            if missing:
+                raise ValueError(f"columns not in the file header: {missing}")
+            rows = list(reader)
+    except UnicodeDecodeError as exc:
+        raise ValueError("the file is not UTF-8; re-export it as 'CSV UTF-8'") from exc
+    except csv.Error as exc:
+        raise ValueError(f"the file is not readable as CSV: {exc}") from exc
 
     records = [{columns[h]: row.get(h) or "" for h in columns} for row in rows]
-    ids = [(row.get(id_column) or "") if id_column else str(i) for i, row in enumerate(rows)]
+    ids = [(row.get(id_column) or "").strip(ident.ASCII_WHITESPACE) if id_column else str(i)
+           for i, row in enumerate(rows)]
     report = preflight_batch(records, platforms=platforms, default_region=default_region)
 
     findings: list[dict[str, object]] = []
     upload: list[dict[str, object]] = []
+    if id_column:
+        seen = Counter(ids)
+        for index, row_id in enumerate(ids):
+            if not row_id:
+                findings.append({"id": f"row {index + 1}", "platform": "all", "field": id_column,
+                                 "status": "warning", "input": "",
+                                 "warning": "empty lead id; this row cannot be joined back to the CRM"})
+            elif seen[row_id] > 1:
+                findings.append({"id": row_id, "platform": "all", "field": id_column,
+                                 "status": "warning", "input": row_id,
+                                 "warning": f"lead id appears on {seen[row_id]} rows"})
     for row_id, record, result in zip(ids, records, report["rows"], strict=True):
         entry: dict[str, object] = {"id": row_id, "row": result["row"]}
         for platform, fields in result["results"].items():
@@ -271,11 +308,18 @@ def preflight_file(
         upload.append(entry)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    upload_path = out_dir / f"{source.stem}-{stamp}.upload.json"
-    upload_path.write_text(json.dumps({"source": source.name, "platforms": report["platforms"],
-                                       "rows": upload, "findings": findings, "report": report},
-                                      indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    payload = json.dumps({"source": source.name, "platforms": report["platforms"],
+                          "rows": upload, "findings": findings, "report": report},
+                         indent=2, ensure_ascii=False) + "\n"
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    for attempt in range(100):
+        upload_path = out_dir / f"{source.stem}-{stamp}{f'-{attempt}' if attempt else ''}.upload.json"
+        try:
+            with upload_path.open("x", encoding="utf-8") as sink:  # never overwrite another run
+                sink.write(payload)
+            break
+        except FileExistsError:
+            continue
     sources = {}
     for r in report["rows"]:
         sources[r["region_source"] or "none"] = sources.get(r["region_source"] or "none", 0) + 1
@@ -288,4 +332,6 @@ def preflight_file(
         "findings": findings[:max_findings],
         "findings_total": len(findings),
         "upload_file": _display(upload_path, root),
+        "upload_file_contents": "one entry per row, keyed by id; each row keeps the values that "
+        "were accepted and leaves out the ones that were not, so no row is dropped",
     }

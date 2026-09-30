@@ -210,3 +210,16 @@ def test_mcp_server_speaks_stdio_and_lists_its_tools():
     assert names == ["normalize_and_hash", "preflight_batch", "preflight_file"]
     text = "".join(c.get("text", "") for c in replies[3]["result"]["content"])
     assert "62a14e44f765419d10fea99367361a727c12365e2520f32218d505ed9aa0f62f" in text
+
+
+@pytest.mark.parametrize("region", ["USA", "United States", "U.S.", "1A"])
+def test_a_region_that_is_not_two_letters_is_an_error_not_a_silent_skip(region):
+    with pytest.raises(ValueError, match="two-letter"):
+        normalize_and_hash("meta", "postal_code", "94035-1234", default_region=region)
+    with pytest.raises(ValueError, match="two-letter"):
+        preflight_batch([{"postal_code": "94035-1234"}], default_region=region)
+
+
+def test_zip_plus_four_with_spaces_is_still_caught_without_a_region():
+    assert normalize_and_hash("meta", "postal_code", "94035 - 1234").status == "needs_review"
+    assert normalize_and_hash("meta", "postal_code", "94035 - 1234", default_region="US").normalized == "94035"

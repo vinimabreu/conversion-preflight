@@ -118,7 +118,7 @@ class Rule:
 # digit of it. Deliberately limited to the plans the package resolves; Italy,
 # for one, keeps a leading 0 in E.164, so this cannot be a general rule.
 _NO_LEADING_ZERO_AFTER = ("44", "49", "55", "61")
-_ZIP_PLUS_FOUR = re.compile(r"^[0-9]{5}[- ]?[0-9]{4}$")
+_ZIP_PLUS_FOUR = re.compile(r"^[0-9]{5}\s*[-\s]?\s*[0-9]{4}$")
 
 
 def _phone(value: str, region: str | None) -> ident.NormalisedPhone | NeedsReview:
@@ -146,9 +146,11 @@ def _phone_meta(value: str, region: str | None) -> str | NeedsReview:
 
 
 def _zip_meta(value: str, region: str | None) -> str | NeedsReview:
-    if region is not None and region.strip().upper() == "US":
+    code = (region or "").strip().upper()
+    if code == "US":
         return ident.us_zip_five(value)
-    if region is None and _ZIP_PLUS_FOUR.match(value.strip(ident.ASCII_WHITESPACE)):
+    known = len(code) == 2 and code.isascii() and code.isalpha()
+    if not known and _ZIP_PLUS_FOUR.match(value.strip(ident.ASCII_WHITESPACE)):
         return NeedsReview(value, "this looks like a US ZIP+4, and Meta hashes only the first "
                            "five digits for US addresses; the record has no country and "
                            "there is no default_region to say whether it is in the US")
@@ -166,7 +168,9 @@ _PHONE_PARSE = (
     "resolves only through the region (the record's own two-letter country when "
     "it has one, else default_region), and only for US, CA, GB, AU, BR and DE; "
     "for GB, AU and DE the national trunk '0' is dropped. A trunk zero written "
-    "inside an international number ('+44 (0)20...', '+49 030...') is refused. "
+    "inside an international number ('+44 (0)20...', '+49 030...') is refused, "
+    "checked only after +44, +49, +55 and +61 and for any '(0)'; other countries "
+    "are not checked, because some, Italy among them, keep the 0. "
     "Anything else, and any letter, is returned as needs_review with the reason, "
     "never guessed."
 )
@@ -540,6 +544,10 @@ RULES: tuple[Rule, ...] = (
         kb_entry=META_KB,
         normalise=_zip_meta,
         divergences=(
+            "With no known region, a value shaped like a US ZIP+4 is returned as "
+            "needs_review instead of being hashed whole or cut to five digits: the "
+            "page states the five-digit rule for U.S. codes only, and the code does "
+            "not guess the country.",
             "UK: the prose asks for the area, district and sector format, which for "
             "M1 1AE would stop at 'm11'; the page's own UK example is 'm11ae', the "
             "whole postcode. The page contradicts itself, and the code follows the "

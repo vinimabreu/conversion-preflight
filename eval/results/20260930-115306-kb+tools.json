@@ -1,0 +1,236 @@
+{
+  "mode": "kb+tools",
+  "model": "sonnet",
+  "stamp": "20260930-115306",
+  "grader": 3,
+  "regraded": false,
+  "passed": 13,
+  "total": 14,
+  "cases": [
+    {
+      "id": "V1-gmail-both",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "normalize_and_hash",
+        "normalize_and_hash",
+        "groq_query",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 10.4,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115306-v1-gmail-both.jsonl"
+    },
+    {
+      "id": "V2-meta-phone-published",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context",
+        "groq_query",
+        "groq_query",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 8.5,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115320-v2-meta-phone-published.jsonl"
+    },
+    {
+      "id": "V3-meta-fn-accent",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context",
+        "groq_query",
+        "groq_query",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 7.3,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115331-v3-meta-fn-accent.jsonl"
+    },
+    {
+      "id": "V4-google-phone",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 9.7,
+      "turns": 4,
+      "transcript": "eval/transcripts/kb+tools/20260930-115341-v4-google-phone.jsonl"
+    },
+    {
+      "id": "V5-zip-plus-four",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "normalize_and_hash",
+        "normalize_and_hash",
+        "groq_query",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 9.3,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115353-v5-zip-plus-four.jsonl"
+    },
+    {
+      "id": "V6-meta-country",
+      "kind": "value",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "normalize_and_hash",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 6.5,
+      "turns": 4,
+      "transcript": "eval/transcripts/kb+tools/20260930-115405-v6-meta-country.jsonl"
+    },
+    {
+      "id": "R1-phone-no-country",
+      "kind": "refusal",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 6.2,
+      "turns": 4,
+      "transcript": "eval/transcripts/kb+tools/20260930-115414-r1-phone-no-country.jsonl"
+    },
+    {
+      "id": "R2-invisible-char",
+      "kind": "refusal",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context"
+      ],
+      "tool_errors": [],
+      "seconds": 5.8,
+      "turns": 3,
+      "transcript": "eval/transcripts/kb+tools/20260930-115423-r2-invisible-char.jsonl"
+    },
+    {
+      "id": "R3-country-name",
+      "kind": "refusal",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "normalize_and_hash",
+        "initial_context",
+        "groq_query",
+        "knowledge_base_read",
+        "groq_query"
+      ],
+      "tool_errors": [],
+      "seconds": 9.6,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115431-r3-country-name.jsonl"
+    },
+    {
+      "id": "K1-meta-gmail-dots",
+      "kind": "rule",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "knowledge_base_read",
+        "normalize_and_hash",
+        "normalize_and_hash",
+        "groq_query"
+      ],
+      "tool_errors": [],
+      "seconds": 8.7,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115444-k1-meta-gmail-dots.jsonl"
+    },
+    {
+      "id": "K2-google-base64",
+      "kind": "rule",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "knowledge_base_search"
+      ],
+      "tool_errors": [],
+      "seconds": 8.1,
+      "turns": 3,
+      "transcript": "eval/transcripts/kb+tools/20260930-115456-k2-google-base64.jsonl"
+    },
+    {
+      "id": "K3-google-unhashed",
+      "kind": "rule",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "knowledge_base_read"
+      ],
+      "tool_errors": [],
+      "seconds": 6.6,
+      "turns": 3,
+      "transcript": "eval/transcripts/kb+tools/20260930-115507-k3-google-unhashed.jsonl"
+    },
+    {
+      "id": "K4-brazil-cep",
+      "kind": "rule",
+      "pass": false,
+      "failures": [
+        "missing /(?<!whether to )(?<!not )(?<!n't )(?<!never )(?<!ever )\\b(send|use|pass|put)\\s+`?24020-005/"
+      ],
+      "tools_called": [
+        "initial_context",
+        "normalize_and_hash",
+        "groq_query",
+        "knowledge_base_read",
+        "groq_query"
+      ],
+      "tool_errors": [],
+      "seconds": 9.9,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115516-k4-brazil-cep.jsonl"
+    },
+    {
+      "id": "K5-non-gmail-dots",
+      "kind": "rule",
+      "pass": true,
+      "failures": [],
+      "tools_called": [
+        "initial_context",
+        "knowledge_base_read",
+        "normalize_and_hash",
+        "normalize_and_hash",
+        "groq_query"
+      ],
+      "tool_errors": [],
+      "seconds": 10.7,
+      "turns": 6,
+      "transcript": "eval/transcripts/kb+tools/20260930-115529-k5-non-gmail-dots.jsonl"
+    }
+  ]
+}

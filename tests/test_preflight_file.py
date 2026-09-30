@@ -50,6 +50,9 @@ def test_upload_file_is_written_by_the_tool_and_keyed_by_id(project):
     assert first["meta"]["zp"] and len(first["meta"]["zp"]) == 64
     assert first["google"]["postal_code"] == "94035-1234"
     assert len(upload["findings"]) == reply["findings_total"]
+    assert "no row is dropped" in reply["upload_file_contents"]
+    second = upload["rows"][1]
+    assert second["id"] == "A-2" and "ph" not in second["meta"] and "em" in second["meta"]
 
 
 def test_findings_are_capped_in_the_reply_but_not_in_the_file(project):
@@ -75,3 +78,42 @@ def test_warnings_do_not_fire_on_clean_values():
     clean = {"first_name": "Mrsa", "last_name": "Junior", "email": "a@example.com", "country": "US"}
     assert warnings_for(clean, "google") == []
     assert warnings_for(clean, "meta") == []
+
+
+def _write(project: Path, text: str, name: str = "data/other.csv", encoding: str = "utf-8") -> str:
+    (project / name).write_bytes(text.encode(encoding))
+    return name
+
+
+def test_repeated_header_among_used_columns_is_refused(project):
+    name = _write(project, "Id,Email,Email\n1,good@example.com,\n")
+    with pytest.raises(ValueError, match="repeats"):
+        preflight_file(name, {"Email": "email"}, root=project, out_dir=project / "out", id_column="Id")
+
+
+def test_two_columns_mapped_to_one_field_is_refused(project):
+    name = _write(project, "Work,Home\na@example.com,b@example.com\n")
+    with pytest.raises(ValueError, match="more than one column"):
+        preflight_file(name, {"Work": "email", "Home": "email"}, root=project, out_dir=project / "out")
+
+
+def test_non_utf8_file_gets_a_clear_error(project):
+    name = _write(project, "Name,Mail\nJosé,jose@example.com\n", encoding="cp1252")
+    with pytest.raises(ValueError, match="UTF-8"):
+        preflight_file(name, {"Mail": "email"}, root=project, out_dir=project / "out")
+
+
+def test_empty_and_repeated_lead_ids_are_warned_about(project):
+    name = _write(project, "Lead,Mail\nL1,a@example.com\nL1,b@example.com\n,c@example.com\n")
+    reply = preflight_file(name, {"Mail": "email"}, root=project, out_dir=project / "out",
+                           id_column="Lead", default_region="US")
+    warnings = [f["warning"] for f in reply["findings"] if f["platform"] == "all"]
+    assert sum("appears on 2 rows" in w for w in warnings) == 2
+    assert any("empty lead id" in w for w in warnings)
+
+
+def test_two_runs_in_the_same_second_keep_both_upload_files(project):
+    first = run(project, default_region="US", platforms=["google"])
+    second = run(project, default_region="US", platforms=["meta"])
+    assert first["upload_file"] != second["upload_file"]
+    assert (project / first["upload_file"]).exists() and (project / second["upload_file"]).exists()

@@ -14,24 +14,23 @@ $ python -m agent.run --csv examples/leads.csv --region US "Check these rows bef
   -> knowledge_base_read ['normalization_and_hashing/google', 'normalization_and_hashing/meta']
   -> groq_query *[_type == "normalizationRule" && field in ["phone","country","first_name","last_name","em...
 
-[6 turns, 14.9s, in 6+30382 cached, out 2033 tokens; transcript runs/...; upload file runs/uploads/leads-....upload.json]
+[6 turns, 14.3s, in 6+31541 cached, out 1895 tokens; transcript runs/...; upload file runs/uploads/leads-....upload.json]
 
-**L-1006, phone `+1 (415) 555 0142 ext 7`, Google and Meta: needs_review.**
-- The tool's reason: it contains `U+0065`, which is neither a digit nor phone formatting.
-- Google says every character after `+` must be digits [normalization_and_hashing/google].
-  Meta says to remove letters [normalization_and_hashing/meta].
-- Refusing letters instead of stripping them is a declared divergence for both platforms
-  [rule: google/phone] [rule: meta/phone]. Stripping them would fuse the extension `7` into the number.
-- Fix: split the extension into its own field and send `+14155550142`.
-
-**L-1006, Google, `first_name` `Mrs. Carol`:** Google says to omit prefixes such as `Mrs.` from
-`given_name` [normalization_and_hashing/google]. The code doesn't strip it, which is declared
-[rule: google/first_name]. Fix: send `Carol` and put the title in its own field.
-
-**L-1008, email containing `U+200B` (between `tom` and `.reyes`), Google and Meta: invalid.** ...
+## L-1006
+- Google and Meta, phone `+1 (415) 555 0142 ext 7`: needs_review because it contains a letter (U+0065).
+  - Google says every character after `+` must be a digit [normalization_and_hashing/google].
+  - Meta says to remove symbols and letters [normalization_and_hashing/meta].
+  - Refusing letters instead of stripping them is a declared divergence for both platforms
+    [rule: google/phone] [rule: meta/phone].
+  - Fix at source: store the extension in a separate field and send only the number.
+- Google, first_name `Mrs. Carol`: warning. Google says to omit prefixes such as `Mrs.` from
+  `given_name` [normalization_and_hashing/google]. The code doesn't remove them, which is declared
+  [rule: google/first_name]. Fix at source: split the title into its own field.
+## L-1008
+- Google and Meta, email: invalid because it contains U+200B. ...
 ```
 
-The file never passes through the model: the agent sees the header and three rows, sends back a column mapping, and `preflight_file` reads every row, writes the upload file keyed by lead id, and returns only the findings.
+Digests never pass through the model's text. The agent sees the file's header and three rows and sends back a column mapping; `preflight_file` reads every row, writes the upload file keyed by lead id, and returns the totals and the flagged cells, never an accepted value or a digest. Citations say which source a claim came from: `[normalization_and_hashing/...]` is the knowledge base, `[rule: ...]` is the dataset.
 
 ## The problem
 
@@ -61,8 +60,8 @@ flowchart LR
 Three sources, three jobs, and the agent is not allowed to blur them:
 
 - **The knowledge base says what each platform documents.** A Sanity Context knowledge base built from Google's Data Manager formatting guide, Google Ads' offline conversions page, and Meta's customer information parameters, served by one Context MCP endpoint. Every rule the agent states is cited with the entry path, for example `[normalization_and_hashing/meta]`.
-- **The dataset says what the code declares.** One `normalizationRule` document per platform and field carries the implementation in plain words, the platform's words when the code was written (verbatim, with the URL and retrieval date), the knowledge base entry that should agree today (`kbEntry`), the platforms' own worked examples, and the differences the code makes on purpose; an `implementationProfile` adds the differences that apply to every rule. A second Context MCP endpoint serves the dataset with a GROQ filter on those two types, and the agent cites a rule as `[rule: meta/phone]`. The documents are structured content, not summaries: a query returns the quote exactly as written. They are generated from `preflight/rules.py`, which the tests pin, by `python -m preflight.sanity_sync --apply`, and `--check` fails when the dataset and the code drift apart. The schema is in `studio/` and deployed at [conversion-preflight.sanity.studio](https://conversion-preflight.sanity.studio/).
-- **The tools compute.** `normalize_and_hash`, `preflight_batch` and `preflight_file` are the only way a normalized value or digest may appear in an answer. `preflight_file` reads a CSV itself and writes the upload file itself, so neither the rows nor the digests pass through the model's text.
+- **The dataset says what the code declares.** One `normalizationRule` document per platform and field carries the implementation in plain words, the platform's words when the code was written (verbatim, with the URL and retrieval date), the knowledge base entry that should agree today (`kbEntry`), the platforms' own worked examples, and the differences the code makes on purpose; an `implementationProfile` adds the differences that apply to every rule. A second Context MCP endpoint serves the dataset with a GROQ filter on those two types, and the agent cites a rule as `[rule: meta/phone]`. The documents are structured content, not summaries: a query returns the quote exactly as written. They are generated from `preflight/rules.py`, which the tests pin, by `python -m preflight.sanity_sync --apply`, and `--check` fails when the dataset and the code drift apart. The schema is in `studio/` and deployed at [conversion-preflight.sanity.studio](https://conversion-preflight.sanity.studio/); the dataset is private, so the Studio shows its documents to project members only.
+- **The tools compute.** `normalize_and_hash`, `preflight_batch` and `preflight_file` are the only way a normalized value or digest may appear in an answer. `preflight_file` reads a CSV itself and writes the upload file itself, so no digest passes through the model's text; the model sees the header, three rows and the flagged cells.
 
 The agent is Claude Code run headless (`claude -p`) with every built-in tool switched off and only these three MCP servers allowed. `agent/run.py` builds the command; `agent/system.md` is the whole prompt.
 
@@ -84,20 +83,26 @@ Each of these was checked against the source page by hand before anything change
 - **Footnotes can point at the wrong page.** *Found by reading the entry against both pages.* In one build, several claims that exist only on the Data Manager page were footnoted to the Google Ads page.
 - **The first crawl indexed one page in fifteen languages.** *Found in the crawled-pages view.* The Data Manager source came back as the formatting page plus fourteen `?hl=` translations, and a later check pulled nineteen translations of the Google Ads page. Turning on "Ignore query parameters" did not stop it; the translations were removed by hand.
 - **The code had behaviour nobody had written down.** *Flagged by the agent's audit.* Letters in a phone number are refused rather than stripped, numbers shorter than eight digits are refused although E.164 has a few seven-digit ones, spaces inside a Meta first name are removed (`Mary Ann` becomes `maryann`), and the country for a national number comes from the record or the account. All of it is declared now, and each declaration has a test that pins it to the code's behaviour.
-- **Two digests were wrong and reported as fine.** *Found by an adversarial review of this repository.* `+44 (0)20 7946 0958` became `+4402079460958`, and a US ZIP+4 with no known country was hashed whole for Meta. Both now come back as `needs_review`. The phone case also affects the upstream library this normaliser is vendored from.
+- **Two digests were wrong and reported as fine.** *Found by adversarial reviews of this repository, which also found a region that was not two letters skipping the ZIP rule, CSV columns lost without a trace, and a demo in which the model composed a phone number for a value the tool had refused. All fixed and tested.* `+44 (0)20 7946 0958` became `+4402079460958`, and a US ZIP+4 with no known country was hashed whole for Meta. Both now come back as `needs_review`. The phone case also affects the upstream library this normaliser is vendored from.
 
 ## Evaluation
 
 `python -m eval.run_eval` runs 14 cases through the agent and grades them by code. Expected digests come from the tested normaliser and, for three cases, from digests Meta publishes on its own page. The digest rule is about provenance: every 64-character hex string in an answer must be an expected value or must appear in a tool result from the same run, so a digest the model wrote itself fails the case even when the right one is also present.
 
-| Mode | Passed | Digests invented |
+| Case group | Full agent: knowledge base, dataset, tools | Knowledge base only (same prompt) |
 |---|---|---|
-| Full agent: knowledge base, dataset and tools | **14 / 14** | 0 |
-| Knowledge base only (same prompt, no dataset, no preflight tools) | 7 / 14 | 0 |
+| Values whose digest Meta prints on its page (3) | 3 / 3 | 3 / 3 |
+| Values whose digest has to be computed (3) | 3 / 3 | **0 / 3** |
+| Refusals: no country, invisible character, country name (3) | 3 / 3 | 3 / 3 |
+| Rule questions (5) | 4 / 5 | 4 / 5 |
+| **Total** | **13 / 14** | **10 / 14** |
+| Hex digests the model wrote itself | **0** | **0** |
 
-Without the tools the model did not invent digests; it declined to compute them, which makes the answer honest and useless for an upload. It passed one value case by copying a digest Meta prints on its own page (the country `us` in the published run; the phone number in an earlier one, so the baseline moves by a case between runs). It would not say what to send for the Brazilian CEP, where the full agent answered `24020-005`, and on `United States` it said to map the name to an ISO code without naming `US`, which the case requires.
+The knowledge base alone is enough for the rules and for any digest a platform happens to print, which the baseline copied out of the entry. Every other digest needs the tool: without it the model did not invent one, it declined to compute it, which is honest and useless for an upload. The baseline also moves between runs, by which of the published digests it copies.
 
-The grading rules changed once, after the first run: version 1 failed any digest that was not an expected value, which failed a correct answer that illustrated a rule with digests the tool had produced. Version 2 is the provenance rule above; it also forbids any digest in a refusal and grades rule questions on the claim that answers them. Every result file records the grader version, and the cleaned transcripts behind the published numbers are in `eval/transcripts/`, so `--regrade` can check them.
+Both modes failed the same rule case, K4. Asked what to send as Google's `postal_code` for the Brazilian CEP `24020-005`, the full agent said the tool sends `24020-005` unchanged and that the documentation does not settle whether `-005` counts as an extension, and it would not recommend a value; the case requires one. The answer is not wrong, and it is still a fail: the criteria were fixed before the run and were not changed after it.
+
+The grader has three versions, all recorded in each result file. Version 1 failed any digest that was not an expected value, which failed a correct answer that illustrated a rule with digests the tool had produced. Version 2 checks provenance instead, forbids any digest in a refusal, and grades rule questions on the claim that answers them. Version 3 tightened the rule-case patterns against counterexamples from an adversarial review of this repository; those counterexamples are tests. Rule cases are still keyword checks, not judgement, so every graded answer is published in `eval/transcripts/`, and `--regrade` reproduces the results from them. The numbers above are a fresh run with the final prompt and grader version 3. "Hex digests" is literal: a Base64 or truncated digest would not be counted, and none of the published answers contains one.
 
 `--kb-only` runs the baseline, `--only V1 K4` runs a subset, and `--regrade runs/<dir>` grades saved transcripts again without calling the model and writes a new, separately named result file. `python -m eval.export` strips a raw transcript down to prompt, messages, tool calls, results and the answer before it is published.
 
@@ -116,14 +121,14 @@ cp .env.example .env    # then fill in the values
 ./.venv/bin/python -m eval.run_eval
 ```
 
-`.env` holds `SANITY_ORGANIZATION_TOKEN` (an organization token with the Context Viewer role), `SANITY_CONTEXT_MCP_URL` (the knowledge base endpoint), `SANITY_DATASET_MCP_URL` (the dataset endpoint), and, only for publishing the rule table, `SANITY_PROJECT_ID`, `SANITY_DATASET` and `SANITY_PROJECT_TOKEN` (a project token with the Developer and Deploy Studio roles).
+`.env` holds `SANITY_ORGANIZATION_TOKEN` (an organization token with the Context Viewer role), `SANITY_CONTEXT_MCP_URL` (the knowledge base endpoint), `SANITY_DATASET_MCP_URL` (the dataset endpoint), and, only for publishing the rule table, `SANITY_PROJECT_ID`, `SANITY_DATASET` and `SANITY_PROJECT_TOKEN` (a project token with the Developer and Deploy Studio roles). `.mcp.json` reads them through environment expansion, so no key is written into a config file.
 
 The Studio is only needed once, because a Context endpoint serves a dataset only when a Studio with its schema is deployed:
 
 ```bash
 cd studio && npm ci --ignore-scripts    # exact versions from package-lock.json
 SANITY_AUTH_TOKEN=<project token> npx sanity deploy
-``` `.mcp.json` reads them through environment expansion, so no key is written into a config file.
+```
 
 Each run is saved under `runs/` as JSON lines, one event per line; `preflight_file` writes its upload file under `runs/uploads/`.
 
@@ -160,7 +165,7 @@ tests/                    the suite
 ./.venv/bin/python -m pytest -q
 ```
 
-The vendored normaliser keeps its upstream tests, with only their import line changed. On top of them: every worked example with an input that the platforms publish is run through the code and must match or be marked as a declared divergence, every published digest is checked against its published normalized value, each declared divergence is pinned to the code's behaviour, the file check is tested for path escapes and missing columns, the MCP server is exercised over real stdio, and the grader is tested against invented digests, digests in refusals, wrong claims in plain words and right ones.
+The vendored normaliser keeps its upstream tests, with only their import lines changed. On top of them: every worked example with an input that the platforms publish is run through the code and must match or be marked as a declared divergence, every published digest is checked against its published normalized value, each declared divergence is pinned to the code's behaviour, the file check is tested for path escapes and missing columns, the MCP server is exercised over real stdio, and the grader is tested against invented digests, digests in refusals, wrong claims in plain words and right ones.
 
 ## License
 

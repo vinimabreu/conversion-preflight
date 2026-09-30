@@ -56,7 +56,7 @@ def build_prompt(question: str, csv_path: Path | None, region: str | None) -> st
     return "\n\n".join(parts)
 
 
-def command(prompt: str, model: str, *, kb_only: bool = False) -> list[str]:
+def command(prompt: str, model: str, *, kb_only: bool = False, keep_session: bool = False) -> list[str]:
     """The claude invocation. kb_only drops the preflight server: the baseline
     the evaluation compares against, same prompt, knowledge base alone."""
     config = ROOT / "agent" / "mcp.kb-only.json" if kb_only else ROOT / ".mcp.json"
@@ -70,7 +70,7 @@ def command(prompt: str, model: str, *, kb_only: bool = False) -> list[str]:
         "--allowedTools", *tools,
         "--disable-slash-commands",
         "--setting-sources", "project",
-        "--no-session-persistence",
+        *([] if keep_session else ["--no-session-persistence"]),
         "--model", model,
         "--output-format", "stream-json",
         "--verbose",
@@ -97,7 +97,7 @@ def describe_call(block: dict) -> str:
 
 
 def run(prompt: str, *, model: str, label: str, kb_only: bool = False,
-        runs_dir: Path = RUNS, quiet: bool = False) -> dict:
+        runs_dir: Path = RUNS, quiet: bool = False, keep_session: bool = False) -> dict:
     env = {**os.environ, **load_env(ROOT / ".env")}
     env.update(
         CLAUDE_CODE_DISABLE_CLAUDE_MDS="1",
@@ -120,7 +120,8 @@ def run(prompt: str, *, model: str, label: str, kb_only: bool = False,
         # stderr fills an unread pipe is how a subprocess deadlocks.
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as err:
             proc = subprocess.Popen(
-                command(prompt, model, kb_only=kb_only), cwd=ROOT, env=env, text=True,
+                command(prompt, model, kb_only=kb_only, keep_session=keep_session),
+                cwd=ROOT, env=env, text=True,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err,
             )
             assert proc.stdout is not None
@@ -153,13 +154,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--kb-only", action="store_true",
                         help="baseline: knowledge base only, no preflight tools")
+    parser.add_argument("--keep-session", action="store_true",
+                        help="let Claude Code save the session, for sharing a run")
     args = parser.parse_args(argv)
     question = AUDIT_PROMPT if args.audit else args.question
     if not question:
         parser.error("ask a question, pass --csv with a request, or use --audit")
     prompt = build_prompt(question, args.csv, args.region)
     result = run(prompt, model=args.model, label="audit" if args.audit else question,
-                 kb_only=args.kb_only)
+                 kb_only=args.kb_only, keep_session=args.keep_session)
     print(result.get("result", "").strip())
     usage = result.get("usage", {})
     print(
@@ -168,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         f"out {usage.get('output_tokens', 0)} tokens; transcript {result['transcript']}"
         + "".join(f"; upload file {path}" for path in result.get("upload_files", []))
         + (f"; failed tool calls: {', '.join(result['tool_errors'])}" if result.get("tool_errors") else "")
+        + (f"; session {result.get('session_id')}" if args.keep_session else "")
         + "]",
         file=sys.stderr,
     )

@@ -131,3 +131,24 @@ def test_right_answers_in_plain_words_pass_the_rule_cases():
     for case_id, answer in right.items():
         verdict = grade(BY_ID[case_id], answer, KB, kb_only=False)
         assert verdict["pass"], (case_id, verdict)
+
+
+def test_grader_v3_counterexamples_from_the_second_review():
+    wrong = {
+        "K1-meta-gmail-dots": "Meta strips dots too: jane.doe+promo@gmail.com becomes janedoe@gmail.com." + M,
+        "K2-google-base64": "No. The Data Manager API takes hex only; Base64 isn't supported." + G,
+        "K5-non-gmail-dots": "For Google, first.last@company.com becomes firstlast@company.com." + G,
+        "K4-brazil-cep": "Send the first five digits (24020). You can send 24020-005 but it may not match." + G,
+        "R3-country-name": "Hash it as the full name; let us know if it fails. ISO codes are optional." + M,
+    }
+    for case_id, answer in wrong.items():
+        assert not grade(BY_ID[case_id], answer, KB + ["normalize_and_hash"], kb_only=False)["pass"], case_id
+    right = {
+        "K4-brazil-cep": "Use `24020-005` as postal_code, in clear." + G,
+        "K1-meta-gmail-dots": "No. Meta keeps the dots and the plus suffix; it only trims and lowercases." + M,
+        "K3-google-unhashed": "In clear: postal_code, region_code (country), city and administrative_area "
+                              "(state). Don't ever hash the city." + G,
+    }
+    for case_id, answer in right.items():
+        verdict = grade(BY_ID[case_id], answer, KB, kb_only=False)
+        assert verdict["pass"], (case_id, verdict)
