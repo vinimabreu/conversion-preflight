@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "sanity-context": {
+      "type": "http",
+      "url": "${SANITY_CONTEXT_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${SANITY_ORGANIZATION_TOKEN}"
+      }
+    },
+    "sanity-dataset": {
+      "type": "http",
+      "url": "${SANITY_DATASET_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${SANITY_ORGANIZATION_TOKEN}"
+      }
+    },
+    "preflight": {
+      "type": "stdio",
+      "command": "${PREFLIGHT_PYTHON}",
+      "args": [
+        "-m",
+        "preflight.mcp_server"
+      ],
+      "env": {
+        "PYTHONPATH": "${PREFLIGHT_ROOT}"
+      }
+    }
+  }
+}

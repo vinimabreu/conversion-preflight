@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sanity-context": {
+      "type": "http",
+      "url": "${SANITY_CONTEXT_MCP_URL}",
+      "headers": { "Authorization": "Bearer ${SANITY_ORGANIZATION_TOKEN}" }
+    }
+  }
+}

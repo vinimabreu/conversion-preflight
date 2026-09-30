@@ -1,0 +1,14 @@
+.env
+.env.*
+node_modules/
+.venv/
+__pycache__/
+/runs/
+/DIARIO.md
+/sources/
+.pytest_cache/
+!.env.example
+/anim/
+studio/node_modules/
+studio/dist/
+studio/.sanity/
